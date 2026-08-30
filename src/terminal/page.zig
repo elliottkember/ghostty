@@ -2424,6 +2424,10 @@ pub fn Mask(
         /// A group of raw values for the vectorized operations.
         const Group = @Vector(group_len, Backing);
 
+        /// Xtensa's LLVM backend cannot legalize vector compares and
+        /// reductions, so the group operations run scalar loops there.
+        const scalar_groups = builtin.cpu.arch == .xtensa;
+
         /// Load a group of values from the slice starting at index i.
         /// Asserts that at least group_len values are available.
         inline fn load(values: []const T, i: usize) Group {
@@ -2455,6 +2459,11 @@ pub fn Mask(
         /// for bools, zero for ints, the zero tag for enums, and so
         /// on. Asserts that at least group_len values are available.
         pub inline fn match(values: []const T, i: usize) bool {
+            if (comptime scalar_groups) {
+                var acc: Backing = 0;
+                for (values[i..][0..group_len]) |v| acc |= bits(v);
+                return acc & mask == 0;
+            }
             return @reduce(.Or, load(values, i)) & mask == 0;
         }
 
@@ -2478,6 +2487,12 @@ pub fn Mask(
             i: usize,
             expected: Backing,
         ) bool {
+            if (comptime scalar_groups) {
+                for (values[i..][0..group_len]) |v| {
+                    if (pattern(v) != expected) return false;
+                }
+                return true;
+            }
             const masked = load(values, i) & @as(Group, @splat(mask));
             return @reduce(.And, masked == @as(Group, @splat(expected)));
         }
@@ -2498,6 +2513,12 @@ pub fn Mask(
             i: usize,
             expected: Backing,
         ) bool {
+            if (comptime scalar_groups) {
+                for (values[i..][0..group_len]) |v| {
+                    if (pattern(v) == expected) return true;
+                }
+                return false;
+            }
             const masked = load(values, i) & @as(Group, @splat(mask));
             return @reduce(.Or, masked == @as(Group, @splat(expected)));
         }
@@ -2512,6 +2533,12 @@ pub fn Mask(
             i: usize,
             expected: Backing,
         ) usize {
+            if (comptime scalar_groups) {
+                for (values[i..][0..group_len], 0..) |v, n| {
+                    if (pattern(v) != expected) return n;
+                }
+                return group_len;
+            }
             const masked = load(values, i) & @as(Group, @splat(mask));
             const ok = masked == @as(Group, @splat(expected));
 
@@ -2553,6 +2580,12 @@ pub fn Mask(
             i: usize,
             expected: Backing,
         ) bool {
+            if (comptime scalar_groups) {
+                for (values[i..][0..group_len]) |v| {
+                    if (bits(v) != expected) return false;
+                }
+                return true;
+            }
             const group = load(values, i);
             return @reduce(.And, group == @as(Group, @splat(expected)));
         }

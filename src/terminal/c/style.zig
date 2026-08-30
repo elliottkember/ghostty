@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const assert = std.debug.assert;
 const testing = std.testing;
 const lib = @import("../lib.zig");
@@ -124,6 +125,13 @@ pub const Style = extern struct {
             // order) into one byte each and write them with a single
             // 8-byte store.
             const flag_bits: u8 = @truncate(@as(u16, @bitCast(s.flags)));
+            if (comptime builtin.cpu.arch == .xtensa) {
+                // Xtensa's LLVM backend cannot legalize vector selects;
+                // spread the bits with a scalar unrolled loop instead.
+                var arr: [8]u8 = undefined;
+                inline for (0..8) |i| arr[i] = @intFromBool((flag_bits >> i) & 1 == 1);
+                break :bytes @bitCast(arr);
+            }
             const masks: @Vector(8, u8) = .{ 1, 2, 4, 8, 16, 32, 64, 128 };
             const hits = (@as(@Vector(8, u8), @splat(flag_bits)) & masks) == masks;
             const bytes: @Vector(8, u8) = @select(

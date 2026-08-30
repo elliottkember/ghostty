@@ -246,7 +246,17 @@ fn initLib(
 
         // Enable PIC so the static library can be linked into PIE
         // executables, which is the default on most Linux distributions.
-        lib.root_module.pic = true;
+        // Native freestanding targets don't have a dynamic loader and some,
+        // such as Xtensa, don't support PIC relocations.
+        lib.root_module.pic = target.result.os.tag != .freestanding;
+
+        // Xtensa l32r literals must stay within range of their code;
+        // per-function sections let the linker interleave .literal.*
+        // with .text.* (the equivalent of GCC's -mtext-section-literals).
+        if (target.result.cpu.arch == .xtensa) {
+            lib.link_function_sections = true;
+            lib.link_data_sections = true;
+        }
     }
 
     if (target.result.os.tag == .windows) {
